@@ -1,6 +1,7 @@
 # Data configuration.
 # CAMELS-IND and HydroRIVERS are downloaded and verified (scripts/download_data.py).
-# Open-Meteo weather has NOT been fetched yet. Gauges have NOT been selected yet.
+# Open-Meteo weather has NOT been fetched yet.
+# Gauge selection: scripts/select_gauges.py -> configs/selected_gauges.csv.
 
 paths:
   data_dir: ./data
@@ -10,6 +11,8 @@ paths:
     open_meteo: ./data/raw/open_meteo
   processed: ./data/processed
   graph: ./data/graph
+  selected_gauges: ./configs/selected_gauges.csv          # tracked in Git
+  gauge_selection_report: ./outputs/gauge_selection_report.csv   # git-ignored
 
 sources:
   camels_ind:
@@ -26,6 +29,7 @@ sources:
       # Paths below are relative to paths.raw.camels_ind (verified after extraction).
       gauge_names: attributes_csv/camels_ind_name.csv       # gauge_id, ghi_stn_id, cwc_site_name, river_basin, cwc_river, ghi_group, flow_availability
       gauge_coords: attributes_csv/camels_ind_topo.csv      # gauge_id, cwc_lat, cwc_lon, ghi_lat, ghi_lon, ... cwc_area, ghi_area
+      dam_attributes: attributes_csv/camels_ind_anth.csv    # num_dams, n_dams, res_store_sum, total_storage, reservoir_index, first/last_dam_year
       static_attributes_dir: attributes_csv                 # anth, clim, geol, hydro, land, name, soil, topo
       streamflow_observed: streamflow_timeseries/streamflow_observed.csv
       gauge_points: shapefiles_catchment/gauge_stations.shp # EPSG:4326, 242 points
@@ -71,12 +75,33 @@ target: streamflow
 target_units: m3/s   # per Data Description PDF, section 3
 missing_value: empty # blank cells in streamflow_observed.csv; no sentinel values found
 
+# Gauge selection for STG-Mamba training (scripts/select_gauges.py).
+# ALL VALUES ARE PROPOSED, to be tuned. Split periods are read from
+# configs/training.yaml, not from here.
 gauge_selection:
-  # TODO: minimum data-availability threshold is undecided. The subset already
-  #       has flow_availability > 30% over 1980-2020 (Godavari min 30.9%,
-  #       Mahanadi min 71.0%). Decide after exploration.
-  min_data_availability: null
-  period: null   # TODO: the period over which availability is measured
+  status: PROPOSED
+  active_preset: proposed
+  monsoon_months: [6, 7, 8, 9]   # June to September
+  # Coverage = percent of days with an observed value. Gauges below any
+  # minimum are dropped.
+  presets:
+    lenient:
+      coverage_min:         {train: 50, validation: 40, test: 40}
+      monsoon_coverage_min: {train: 50, validation: 40, test: 40}
+    proposed:
+      coverage_min:         {train: 70, validation: 60, test: 60}
+      monsoon_coverage_min: {train: 70, validation: 60, test: 60}
+    strict:
+      coverage_min:         {train: 85, validation: 75, test: 75}
+      monsoon_coverage_min: {train: 85, validation: 75, test: 75}
+  # Flags mark gauges for review; they never drop a gauge automatically.
+  flags:
+    heavy_dam_reservoir_index_min: 1.0   # reservoir_index = total storage / mean annual flow
+    small_area_km2_max: 500              # ghi_area below this
+    zero_flow_pct_max: 50                # percent of observed days with zero flow above this
+    constant_run_days_min: 30            # identical consecutive non-zero values for this many days
+    coord_mismatch_km_max: 5             # cwc vs ghi station distance above this
+    high_flow_quantile: 0.95             # test days above the train-period quantile; flag if none
 
 open_meteo:
   # TODO: list daily variables. Verify exact variable names against the

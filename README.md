@@ -5,8 +5,9 @@ This repository holds **Phase 2**: a spatio-temporal graph + Mamba (STG-Mamba)
 streamflow forecasting model, plus a live prediction backend and frontend for
 the project review.
 
-> **Status: scaffold only.** No model, data pipeline, graph code, backend
-> endpoint or frontend has been implemented yet. No data has been downloaded.
+> **Status: early data preparation.** Implemented so far: dataset download
+> (`scripts/download_data.py`) and gauge selection (`scripts/select_gauges.py`).
+> No model, graph code, weather fetching, backend endpoint or frontend exists yet.
 
 ## Methodology (three phases)
 
@@ -20,7 +21,7 @@ the project review.
 
 - **Region:** India only. Two basins: **Godavari** and **Mahanadi**.
 - **Time step:** daily.
-- **Target:** observed river streamflow at gauge nodes.
+- **Target:** observed river streamflow (m3/s) at gauge nodes.
 - **Forecast horizon:** 1 to 3 days (**proposed**, not final).
 - **Graph:** nodes = river gauges; edges = upstream to downstream links derived
   from the river network.
@@ -32,14 +33,17 @@ the project review.
 
 | Dataset | Role |
 |---------|------|
-| [CAMELS-IND](https://doi.org/10.5281/zenodo.14005378) | Observed daily streamflow (targets), gauge locations, static attributes, catchment boundaries |
+| [CAMELS-IND v2.2](https://doi.org/10.5281/zenodo.14999580) | Observed daily streamflow (targets), gauge locations, static attributes, catchment boundaries |
 | [HydroRIVERS](https://www.hydrosheds.org/products/hydrorivers) | River network for upstream/downstream graph edges |
 | [Open-Meteo Archive API](https://open-meteo.com/en/docs/historical-weather-api) | Historical (ERA5-based) weather at each gauge for training |
 | [Open-Meteo Forecast API](https://open-meteo.com/en/docs) | Live recent + forecast weather for live predictions |
 
-Which gauges in Godavari and Mahanadi have enough streamflow data is **not yet
-verified**. See [docs/dataset_sources.md](docs/dataset_sources.md) for details,
-licensing and limitations.
+CAMELS-IND contains 50 Godavari (CWC basin code `03`) and 19 Mahanadi (`08`)
+gauges. The gauges selected for training are listed in
+[configs/selected_gauges.csv](configs/selected_gauges.csv), produced by
+`scripts/select_gauges.py` from the PROPOSED thresholds in `configs/data.yaml`.
+See [docs/dataset_sources.md](docs/dataset_sources.md) for details, licensing
+and limitations.
 
 Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0).
 
@@ -61,6 +65,13 @@ python -m pip install -e .
 cp .env.example .env
 ```
 
+## Data preparation
+
+```bash
+python scripts/download_data.py   # CAMELS-IND + HydroRIVERS into data/raw/ (verified, re-runnable)
+python scripts/select_gauges.py   # writes configs/selected_gauges.csv and outputs/gauge_selection_report.csv
+```
+
 ## Run tests
 
 ```bash
@@ -68,15 +79,16 @@ source .venv/bin/activate
 pytest
 ```
 
-Only `tests/test_environment.py` runs real checks (imports, MPS availability,
-a tiny float32 tensor op). All other tests are skipped placeholders.
+`tests/test_environment.py` checks imports, MPS availability and a tiny float32
+tensor op; `tests/test_data_pipeline.py` tests the loader and gauge-selection
+logic. The remaining test files are skipped placeholders.
 
 ## Layout
 
-- `configs/`: YAML configs (placeholders with TODOs)
+- `configs/`: YAML configs and the selected gauge list
 - `data/`: raw / processed / graph data (never committed)
-- `src/floodshield/`: the Python package (stubs)
-- `scripts/`: command-line entry points (stubs)
+- `src/floodshield/`: the Python package
+- `scripts/`: command-line entry points
 - `app/backend/`: FastAPI live-demo backend (placeholder)
 - `app/frontend/`: frontend (stack to be decided)
 - `docs/`: dataset sources, model architecture, live demo plan

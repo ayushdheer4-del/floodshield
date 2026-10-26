@@ -1,0 +1,1 @@
+gauge_id,basin,river,cwc_site_name,ghi_lat,ghi_lon,catchment_area_km2,flag_heavy_dam,flag_small_area,flag_many_zero_days,flag_long_constant_run,flag_coord_mismatch,flag_no_test_high_flow
