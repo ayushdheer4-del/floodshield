@@ -1,4 +1,6 @@
-# Data configuration (placeholder; nothing downloaded or verified yet).
+# Data configuration.
+# CAMELS-IND and HydroRIVERS are downloaded and verified (scripts/download_data.py).
+# Open-Meteo weather has NOT been fetched yet. Gauges have NOT been selected yet.
 
 paths:
   data_dir: ./data
@@ -11,16 +13,37 @@ paths:
 
 sources:
   camels_ind:
-    zenodo_doi: 10.5281/zenodo.14005378
+    version: "2.2"
+    zenodo_record: 14999580            # https://zenodo.org/records/14999580
     paper_doi: 10.5194/essd-17-461-2025
-    subset_archive: CAMELS_IND_Catchments_Streamflow_Sufficient.zip
-    data_description: 00_CAMELS_IND_Data_Description.pdf
-    coverage: "1980-2020"   # per dataset description; verify after download
-    download: manual
+    license: CC-BY-4.0                  # cite the ESSD paper (see Disclaimer.txt)
+    download: scripted                  # md5-verified by scripts/download_data.py
+    files:
+      subset_archive: CAMELS_IND_Catchments_Streamflow_Sufficient.zip
+      subset_archive_md5: 3993c25ba7d7b86df0541de91e094f39
+      data_description: 00_CAMELS_IND_Data_Description.pdf
+      data_description_md5: 19cf924c9a0a5417163ba773432ac274
+      # Paths below are relative to paths.raw.camels_ind (verified after extraction).
+      gauge_names: attributes_csv/camels_ind_name.csv       # gauge_id, ghi_stn_id, cwc_site_name, river_basin, cwc_river, ghi_group, flow_availability
+      gauge_coords: attributes_csv/camels_ind_topo.csv      # gauge_id, cwc_lat, cwc_lon, ghi_lat, ghi_lon, ... cwc_area, ghi_area
+      static_attributes_dir: attributes_csv                 # anth, clim, geol, hydro, land, name, soil, topo
+      streamflow_observed: streamflow_timeseries/streamflow_observed.csv
+      gauge_points: shapefiles_catchment/gauge_stations.shp # EPSG:4326, 242 points
+      catchment_polygons: shapefiles_catchment/catchments.shp  # EPSG:4326, 242 polygons
+      # Present but NOT used: catchment_mean_forcings/ (IMD/IMDAA forcings; we use
+      # Open-Meteo instead) and streamflow_timeseries/lstm_pred_streamflow.csv
+      # (the authors' LSTM predictions, not observations).
+    subset_gauge_count: 242   # actual count in the v2.2 zip (the PDF text says 228)
+    coverage: {start: "1980-01-01", end: "2020-12-31"}   # verified: 14,976 contiguous daily rows
   hydrorivers:
+    version: "1.0"
     url: https://www.hydrosheds.org/products/hydrorivers
-    download: manual
-    # TODO: choose the regional (Asia) vs global product once inspected.
+    archive: HydroRIVERS_v10_as_shp.zip   # Asia shapefile
+    archive_url: https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_as_shp.zip
+    archive_bytes: 90510995               # no checksum published; verified by size + zip test
+    shapefile: HydroRIVERS_v10_as_shp/HydroRIVERS_v10_as.shp   # relative to paths.raw.hydrorivers; EPSG:4326, 1,428,959 lines
+    license: HydroSHEDS license (free for scientific, educational and commercial use; attribution required)
+    download: scripted
   open_meteo_archive:
     docs: https://open-meteo.com/en/docs/historical-weather-api
     download: scripted   # via scripts/fetch_open_meteo_archive.py (not implemented)
@@ -29,19 +52,29 @@ basins:
   - godavari
   - mahanadi
 
-# CAMELS-IND gauge IDs are 5 digits; the first 2 digits are the CWC basin code.
-# TODO: confirm the basin-code prefixes for Godavari and Mahanadi from
-#       00_CAMELS_IND_Data_Description.pdf. Do not hard-code until verified.
+# gauge_id is 5 digits: first 2 = CWC basin code, last 3 = station number
+# (Data Description PDF, Table 3). The CSVs store gauge_id as an integer, so the
+# leading zero is lost (3002, not 03002). Always read gauge_id as a string and
+# zero-pad to 5 digits before taking the prefix or matching file names.
+gauge_id:
+  digits: 5
+  zero_pad: true
+
+# Verified: each prefix maps to exactly one river_basin value in camels_ind_name.csv,
+# and agrees with the streamflow column headers and forcing file names.
 basin_code_prefixes:
-  godavari: null   # TODO
-  mahanadi: null   # TODO
+  godavari: "03"   # river_basin == "Godavari"; 50 gauges in the subset
+  mahanadi: "08"   # river_basin == "Mahanadi"; 19 gauges in the subset
 
 frequency: daily
-target: streamflow   # observed daily streamflow at gauge nodes; units per CAMELS-IND description (TODO verify)
+target: streamflow
+target_units: m3/s   # per Data Description PDF, section 3
+missing_value: empty # blank cells in streamflow_observed.csv; no sentinel values found
 
 gauge_selection:
-  # TODO: minimum data-availability threshold is undecided (e.g. fraction of
-  #       non-missing days within the training period). Decide after exploration.
+  # TODO: minimum data-availability threshold is undecided. The subset already
+  #       has flow_availability > 30% over 1980-2020 (Godavari min 30.9%,
+  #       Mahanadi min 71.0%). Decide after exploration.
   min_data_availability: null
   period: null   # TODO: the period over which availability is measured
 
