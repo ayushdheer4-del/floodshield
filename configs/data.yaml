@@ -1,7 +1,7 @@
 # Data configuration.
 # CAMELS-IND and HydroRIVERS are downloaded and verified (scripts/download_data.py).
-# Open-Meteo weather has NOT been fetched yet.
 # Gauge selection: scripts/select_gauges.py -> configs/selected_gauges.csv.
+# Open-Meteo weather: planned (scripts/plan_open_meteo_fetch.py); NOT fetched yet.
 
 paths:
   data_dir: ./data
@@ -50,7 +50,7 @@ sources:
     download: scripted
   open_meteo_archive:
     docs: https://open-meteo.com/en/docs/historical-weather-api
-    download: scripted   # via scripts/fetch_open_meteo_archive.py (not implemented)
+    download: scripted   # scripts/fetch_open_meteo_archive.py (Phase B, not implemented yet)
 
 basins:
   - godavari
@@ -108,8 +108,41 @@ gauge_selection:
     coord_mismatch_km_max: 5             # cwc vs ghi station distance above this
     high_flow_quantile: 0.95             # test days above the train-period quantile; flag if none
 
+# Open-Meteo weather for training (Archive API) and, later, live (Forecast API).
+# ALL VALUES ARE PROPOSED (Phase A plan). Checked against
+# https://open-meteo.com/en/docs/historical-weather-api and https://open-meteo.com/en/docs.
 open_meteo:
-  # TODO: list daily variables. Verify exact variable names against the
-  #       Open-Meteo docs; they must exist in BOTH the archive and forecast APIs.
-  daily_variables: []
-  timezone: null   # TODO: decide (e.g. local vs UTC) and keep consistent with streamflow dates
+  status: PROPOSED
+  archive_base_url: https://archive-api.open-meteo.com/v1/archive
+  forecast_base_url: https://api.open-meteo.com/v1/forecast
+  # Without `models`, the Archive API mixes ERA5 with ECMWF IFS 9 km from 2017
+  # onwards; the docs advise ERA5 or ERA5-Land for multi-decade consistency.
+  # ERA5 (0.25 deg) has precipitation natively; ERA5-Land (0.1 deg) does not
+  # (docs variable table). ET0 under ERA5 is marked "only with ERA5-Seamless".
+  model: era5
+  grid_resolution_deg: 0.25
+  grid_origin_deg: 0.0          # cell centres at multiples of 0.25 deg (checked by test request)
+  cell_selection: nearest       # API default "land" may pick a different cell by elevation
+  elevation: nan                # disables statistical downscaling (grid-cell mean elevation)
+  timezone: Asia/Kolkata
+  # Daily variables present with the same name and unit in BOTH APIs.
+  daily_variables:
+    - precipitation_sum           # mm
+    - temperature_2m_max          # degC
+    - temperature_2m_min          # degC
+    - temperature_2m_mean         # degC
+    - et0_fao_evapotranspiration  # mm
+  # Excluded: soil moisture. Archive layers 0-7/7-28/28-100/100-255 cm (hourly,
+  # plus daily *_mean); Forecast layers 0-1/1-3/3-9/9-27/27-81 cm (hourly only).
+  date_range: {start: "1990-01-01", end: "2018-12-31"}
+  sampling:
+    single_point_area_km2_max: 5000   # ghi_area below this: 1 point (representative point)
+    medium_area_km2_max: 50000        # 5,000 to 50,000 km2: up to medium_max_points
+    medium_max_points: 4
+    large_max_points: 12              # over 50,000 km2
+  cell_plan: ./data/raw/open_meteo/cell_plan.csv
+  gauge_cell_plan: ./data/raw/open_meteo/gauge_cells.csv
+  rate_limits:   # https://open-meteo.com/en/terms (free, non-commercial)
+    per_minute: 600
+    per_hour: 5000
+    per_day: 10000
