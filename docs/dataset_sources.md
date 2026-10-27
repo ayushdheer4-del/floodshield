@@ -2,7 +2,8 @@
 
 > **Status:** CAMELS-IND and HydroRIVERS are downloaded into `data/raw/` and
 > verified by `scripts/download_data.py`. Open-Meteo data has **not** been
-> fetched yet. No gauges have been selected and no graph has been built.
+> fetched yet. Gauges are selected by `scripts/select_gauges.py`
+> (`configs/selected_gauges.csv`); no graph has been built.
 
 ## 1. CAMELS-IND (v2.2)
 
@@ -18,6 +19,8 @@
     in 8 files: `anth`, `clim`, `geol`, `hydro`, `land`, `name`, `soil`, `topo`.
     - `camels_ind_name.csv`: `gauge_id, ghi_stn_id, cwc_site_name, river_basin, cwc_river, ghi_group, flow_availability`
     - `camels_ind_topo.csv`: `gauge_id, cwc_lat, cwc_lon, ghi_lat, ghi_lon, elev_*, slope_*, cwc_area, ghi_area, gauge_elevation, dpsbar`
+    - `camels_ind_anth.csv` dam columns: `num_dams, n_dams, res_store_sum, total_storage, reservoir_index, first_dam_year, last_dam_year`
+      (the PDF calls the last one `latest_dam_year`).
   - `streamflow_timeseries/streamflow_observed.csv`: observed daily streamflow
     (sourced from India-WRIS).
   - `shapefiles_catchment/`: `gauge_stations.shp` (points) and `catchments.shp`
@@ -29,7 +32,9 @@
   (header = gauge ID). Values are in **m3/s** (Data Description PDF, section 3).
   Missing days are blank cells; no sentinel values and no negative values were found.
 - **Type:** observed (streamflow).
-- **Time coverage:** 1980-01-01 to 2020-12-31 (verified: 14,976 contiguous daily rows).
+- **Time coverage:** the file spans 1980-01-01 to 2020-12-31 (verified: 14,976
+  contiguous daily rows), but see the limitations below for where observations
+  actually stop.
 - **Licence / attribution:** CC BY 4.0 (Zenodo record). `Disclaimer.txt` asks
   users to cite the CAMELS-IND data description article and the original data
   sources where required.
@@ -49,8 +54,14 @@
   `river_basin` column (each prefix maps to exactly one basin). The name file,
   the streamflow column headers and the forcing file names contain the same 242 IDs.
 - **Known limitations and discrepancies:**
-  - Ends in 2020, so there is no recent observed flow for validating live forecasts.
-  - Many gauges have gaps (the subset keeps gauges with more than 30% availability over 1980-2020).
+  - For Godavari and Mahanadi, observed streamflow mostly ends in Feb-Mar 2019;
+    only 14 of the 69 gauges have any data in 2020. There is no recent observed
+    flow for validating live forecasts.
+  - Many Godavari gauges share a data gap around 2014-2015 (roughly mid-2014 to
+    mid-2016). The train/validation/test split in `configs/training.yaml`
+    (1991-2008 / 2009-2012 / 2013-2018) was chosen after inspecting this coverage.
+  - Many gauges have other gaps (the subset keeps gauges with more than 30%
+    availability over 1980-2020).
   - Large dams and reservoirs regulate flows in both basins (e.g. Hirakud on the
     Mahanadi), so observed flow is not purely natural and a weather-driven model
     will not capture reservoir operations.
@@ -91,8 +102,8 @@
 - **Type:** reanalysis (ERA5-based).
 - **Licence / attribution:** data CC BY 4.0; free for non-commercial use;
   no API key. Attribution: "Weather data by Open-Meteo.com".
-- **Time coverage:** multi-decadal, covering the 1980 to 2020 CAMELS-IND
-  period (verify for the chosen variables).
+- **Time coverage:** multi-decadal; must cover the training split,
+  1991-01-01 to 2018-12-31 (verify for the chosen variables).
 - **Known limitations:** reanalysis at a grid point is not a gauge or catchment
   average; respect API rate limits and cache responses.
 

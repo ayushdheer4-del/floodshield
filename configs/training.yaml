@@ -8,16 +8,21 @@ seed: 42
 
 # PROPOSED split, NOT FINAL. Time-based split only (no random shuffling across
 # time), to avoid leakage between periods.
-# The test period ends 2018-12-31 because CAMELS-IND v2.2 observed streamflow
-# for Godavari and Mahanadi mostly stops in Feb-Mar 2019 (almost no data in
-# 2020), so 2017-2020 could not exceed ~55% coverage. The test period covers
-# the 2017 and 2018 monsoons.
+#
+# This split was chosen AFTER inspecting streamflow coverage in CAMELS-IND v2.2,
+# not fixed in advance:
+#   - Observed streamflow for Godavari and Mahanadi mostly ends in Feb-Mar 2019
+#     (almost no data in 2020), so the test period ends 2018-12-31.
+#   - Many Godavari gauges share a data gap around 2014-2015. Validation is
+#     placed before it (2009-2012) and the gap falls inside the test period.
+# Because the periods were picked with knowledge of data availability, report
+# this alongside any test-period results.
 split:
   strategy: time_based
   status: proposed
-  train: {start: "1991-01-01", end: "2012-12-31"}
-  validation: {start: "2013-01-01", end: "2016-12-31"}
-  test: {start: "2017-01-01", end: "2018-12-31"}
+  train: {start: "1991-01-01", end: "2008-12-31"}
+  validation: {start: "2009-01-01", end: "2012-12-31"}
+  test: {start: "2013-01-01", end: "2018-12-31"}
 
 loss:
   # Masked loss: days with missing observed streamflow are excluded.
