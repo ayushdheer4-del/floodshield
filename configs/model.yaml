@@ -6,7 +6,30 @@ dtype: float32         # float32 only on MPS (no float64, no float16/bfloat16)
 
 input:
   window_days: null    # TODO: input window length (keep short: days to a few weeks)
-  dynamic_features: [] # TODO: weather variables (see configs/data.yaml open_meteo.daily_variables)
+
+  # Dynamic (daily) input variables. Names are the CAMELS-IND forcing columns
+  # (data/processed/camels_forcings_selected.parquet; units in
+  # camels_forcings_selected_units.json). Change this list to change the model
+  # inputs; nothing else should hard-code variable names.
+  #
+  # PROPOSED default: only variables with a VERIFIED live source (IMD real-time
+  # gridded data via imdlib; see docs/live_data_options.md):
+  #   prcp  mm/day  IMD rainfall 0.25 deg (live: same grid, ~1 day lag)
+  #   tmax  C       IMD temperature 1 deg   (live: 0.5 deg grid, ~1-2 day lag)
+  #   tmin  C       IMD temperature 1 deg   (live: 0.5 deg grid, ~1 day lag)
+  #   tavg  C       (tmax + tmin) / 2, derived the same way live
+  feature_list: [prcp, tmax, tmin, tavg]
+
+  # Every CAMELS-IND forcing column, for offline experiments only. The columns
+  # not in feature_list have NO verified live source yet:
+  #   IMDAA (reanalysis, ends 2020 on NCMRWF RDS): srad_lw, srad_sw, wind_u,
+  #     wind_v, wind, rel_hum, evap_canopy, evap_surface, sm_lvl1..sm_lvl4
+  #   GLEAM (yearly releases, no near-real-time): pet_gleam, aet_gleam
+  #   Singer et al. (2021) hourly PET from ERA5-Land: pet (missing in 1980)
+  feature_list_all_camels: [prcp, tmax, tmin, tavg, srad_lw, srad_sw, wind_u, wind_v,
+                            wind, rel_hum, pet, pet_gleam, aet_gleam, evap_canopy,
+                            evap_surface, sm_lvl1, sm_lvl2, sm_lvl3, sm_lvl4]
+
   static_features: []  # TODO: selected CAMELS-IND static catchment attributes
 
 graph:
@@ -24,5 +47,6 @@ model:
 
 output:
   target: streamflow
-  # PROPOSED, not final.
+  # PROPOSED, not final. See docs/live_data_options.md ("horizon problem"):
+  # live observed inputs lag by 1-2 days, so the effective lead time is shorter.
   forecast_horizon_days: [1, 2, 3]

@@ -10,6 +10,7 @@ File layout and units follow ``00_CAMELS_IND_Data_Description.pdf``:
   then one column per gauge, daily streamflow in m3/s, blank cell = missing.
 """
 
+import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
@@ -36,6 +37,8 @@ NAME_COLUMNS = ["ghi_stn_id", "cwc_site_name", "river_basin", "cwc_river", "ghi_
 TOPO_COLUMNS = ["ghi_lat", "ghi_lon", "ghi_area", "cwc_lat", "cwc_lon", "cwc_area"]
 
 STREAMFLOW_FILE = Path("streamflow_timeseries") / "streamflow_observed.csv"
+FORCINGS_DIR = Path("catchment_mean_forcings")
+_HEADER_UNIT = re.compile(r"^(?P<name>[A-Za-z0-9_]+)\((?P<unit>[^)]*)\)$")
 
 
 def pad_gauge_ids(ids: Iterable) -> pd.Series:
@@ -108,3 +111,39 @@ def load_streamflow(raw_dir: Path, gauge_ids: Iterable[str] | None = None) -> pd
             raise KeyError(f"gauges not in streamflow file: {missing}")
         flows = flows[wanted]
     return flows
+
+
+def split_header_units(columns: Iterable[str]) -> dict[str, str]:
+    """Map ``"prcp(mm/day)"``-style headers to ``{"prcp": "mm/day"}``.
+
+    Raises if a header has no ``name(unit)`` form, so units are never guessed.
+    """
+    units = {}
+    for col in columns:
+        m = _HEADER_UNIT.match(col.strip())
+        if m is None:
+            raise ValueError(f"forcing header without a unit: {col!r}")
+        units[m["name"]] = m["unit"]
+    return units
+
+
+def load_forcings(raw_dir: Path, gauge_id: str) -> tuple[pd.DataFrame, dict[str, str]]:
+    """Catchment-mean daily forcings for one gauge, as (frame, units).
+
+    The frame has a DatetimeIndex and columns named without the unit suffix;
+    ``units`` maps each column to the unit stated in the file header.
+    Missing values stay NaN; dates must form a continuous daily series.
+    """
+    gid = pad_gauge_ids([gauge_id]).iloc[0]
+    path = Path(raw_dir) / FORCINGS_DIR / f"{gid}.csv"
+    df = pd.read_csv(path)
+    dates = pd.to_datetime(df[["year", "month", "day"]])
+    values = df.drop(columns=["year", "month", "day"])
+    units = split_header_units(values.columns)
+    values.columns = list(units)
+    values = values.apply(pd.to_numeric, errors="raise").astype("float64")
+    values.index = pd.DatetimeIndex(dates, name="date")
+    expected = pd.date_range(values.index[0], values.index[-1], freq="D")
+    if values.index.has_duplicates or not values.index.equals(expected):
+        raise ValueError(f"dates in {path} are not a continuous daily series")
+    return values, units

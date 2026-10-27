@@ -33,10 +33,11 @@ the project review.
 
 | Dataset | Role |
 |---------|------|
-| [CAMELS-IND v2.2](https://doi.org/10.5281/zenodo.14999580) | Observed daily streamflow (targets), gauge locations, static attributes, catchment boundaries |
+| [CAMELS-IND v2.2](https://doi.org/10.5281/zenodo.14999580) | Observed daily streamflow (targets), catchment-mean forcings (IMD rainfall/temperature, IMDAA, GLEAM; model inputs), gauge locations, static attributes, catchment boundaries |
 | [HydroRIVERS](https://www.hydrosheds.org/products/hydrorivers) | River network for upstream/downstream graph edges |
-| [Open-Meteo Archive API](https://open-meteo.com/en/docs/historical-weather-api) | Historical (ERA5-based) weather at each gauge for training |
-| [Open-Meteo Forecast API](https://open-meteo.com/en/docs) | Live recent + forecast weather for live predictions |
+| IMD real-time gridded rainfall / temperature (via `imdlib`) | Candidate live inputs; researched, not implemented (see [docs/live_data_options.md](docs/live_data_options.md)) |
+
+Open-Meteo was considered and is **not used**.
 
 CAMELS-IND contains 50 Godavari (CWC basin code `03`) and 19 Mahanadi (`08`)
 gauges. The gauges selected for training are listed in
@@ -44,8 +45,6 @@ gauges. The gauges selected for training are listed in
 `scripts/select_gauges.py` from the PROPOSED thresholds in `configs/data.yaml`.
 See [docs/dataset_sources.md](docs/dataset_sources.md) for details, licensing
 and limitations.
-
-Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0).
 
 ## Compute
 
@@ -70,6 +69,7 @@ cp .env.example .env
 ```bash
 python scripts/download_data.py   # CAMELS-IND + HydroRIVERS into data/raw/ (verified, re-runnable)
 python scripts/select_gauges.py   # writes configs/selected_gauges.csv and outputs/gauge_selection_report.csv
+python scripts/build_forcing_table.py   # all CAMELS forcings for the selected gauges -> data/processed/
 ```
 
 ## Run tests

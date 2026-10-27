@@ -1,9 +1,11 @@
 # Dataset sources
 
 > **Status:** CAMELS-IND and HydroRIVERS are downloaded into `data/raw/` and
-> verified by `scripts/download_data.py`. Open-Meteo data has **not** been
-> fetched yet. Gauges are selected by `scripts/select_gauges.py`
-> (`configs/selected_gauges.csv`); no graph has been built.
+> verified by `scripts/download_data.py`. Gauges are selected by
+> `scripts/select_gauges.py` (`configs/selected_gauges.csv`). Model inputs are
+> the CAMELS-IND catchment-mean forcings (`scripts/build_forcing_table.py`).
+> Live data sources are researched in `docs/live_data_options.md`; none is
+> implemented. No graph has been built. **Open-Meteo is not used.**
 
 ## 1. CAMELS-IND (v2.2)
 
@@ -22,19 +24,20 @@
     - `camels_ind_anth.csv` dam columns: `num_dams, n_dams, res_store_sum, total_storage, reservoir_index, first_dam_year, last_dam_year`
       (the PDF calls the last one `latest_dam_year`).
   - `streamflow_timeseries/streamflow_observed.csv`: observed daily streamflow
-    (sourced from India-WRIS).
+    (sourced from India-WRIS), the model target.
+  - `catchment_mean_forcings/<gauge>.csv`: 19 daily catchment-mean forcings,
+    the model inputs (section 2).
   - `shapefiles_catchment/`: `gauge_stations.shp` (points) and `catchments.shp`
     (polygons), both EPSG:4326, 242 features each.
-  - Also in the zip, **not used**: `catchment_mean_forcings/` (one CSV per gauge;
-    IMD and IMDAA forcings) and `streamflow_timeseries/lstm_pred_streamflow.csv`
+  - Also in the zip, **not used**: `streamflow_timeseries/lstm_pred_streamflow.csv`
     (the authors' LSTM model predictions, not observations).
 - **Streamflow format:** columns `year, month, day`, then one column per gauge
   (header = gauge ID). Values are in **m3/s** (Data Description PDF, section 3).
   Missing days are blank cells; no sentinel values and no negative values were found.
-- **Type:** observed (streamflow).
-- **Time coverage:** the file spans 1980-01-01 to 2020-12-31 (verified: 14,976
-  contiguous daily rows), but see the limitations below for where observations
-  actually stop.
+- **Type:** observed (streamflow); gridded observations and reanalysis (forcings).
+- **Time coverage:** files span 1980-01-01 to 2020-12-31 (verified: 14,976
+  contiguous daily rows), but see the limitations below for where streamflow
+  observations actually stop.
 - **Licence / attribution:** CC BY 4.0 (Zenodo record). `Disclaimer.txt` asks
   users to cite the CAMELS-IND data description article and the original data
   sources where required.
@@ -69,7 +72,30 @@
   - The PDF refers to `shapefile_catchment` and `change_logs_and_disclaimer.txt`;
     the zip has `shapefiles_catchment/` and `Disclaimer.txt`.
 
-## 2. HydroRIVERS (v1.0, Asia)
+## 2. CAMELS-IND catchment-mean forcings (model inputs)
+
+All 46 selected gauges have the same 19 columns, continuous daily
+1980-01-01 to 2020-12-31. Catchment means are "area-weighted averages for each
+day" (paper, section 4).
+
+| Column | Unit | Original source |
+|---|---|---|
+| prcp | mm/day | IMD gridded rainfall, 0.25° (Pai et al., 2014) |
+| tmax, tmin | C | IMD gridded temperature, 1° (Srivastava et al., 2009) |
+| tavg | C | (tmax + tmin) / 2 |
+| srad_lw, srad_sw | w/m2 | IMDAA reanalysis, ~12 km (Rani et al., 2021) |
+| wind_u, wind_v, wind | m/s | IMDAA (wind stated as sqrt(u² + v²)) |
+| rel_hum | % | IMDAA |
+| evap_canopy, evap_surface | mm/day | IMDAA |
+| sm_lvl1..4 | kg/m2 | IMDAA (layers 0-0.1, 0.1-0.35, 0.35-1, 1-3 m) |
+| pet | mm/day | Singer et al. (2021), 0.1°, ERA5-Land based (from 1981) |
+| pet_gleam, aet_gleam | mm/day | GLEAM (Miralles et al., 2011) |
+
+Not stated in the PDF or paper: the day boundary, how IMDAA hourly fields were
+aggregated to days, and the GLEAM version. Data anomalies (e.g. tmin = 0.00 C
+at every gauge on 2019-01-11) are listed in `docs/live_data_options.md`.
+
+## 3. HydroRIVERS (v1.0, Asia)
 
 - **Provider:** HydroSHEDS (WWF and partners).
 - **URL:** https://www.hydrosheds.org/products/hydrorivers
@@ -92,49 +118,26 @@
   snapping errors or coarse resolution can create wrong or missing edges, so the
   graph needs validation (`src/floodshield/graph/validation.py`).
 
-## 3. Open-Meteo Historical Weather (Archive) API
+## 4. Live data (researched, not implemented)
 
-> Not fetched yet.
+See `docs/live_data_options.md`. Summary:
 
-- **Provider:** Open-Meteo.
-- **URL:** https://open-meteo.com/en/docs/historical-weather-api
-- **Provides:** historical daily weather at each gauge location (training inputs).
-- **Type:** reanalysis (ERA5-based).
-- **Licence / attribution:** data CC BY 4.0; free for non-commercial use;
-  no API key. Attribution: "Weather data by Open-Meteo.com".
-- **Time coverage:** multi-decadal; must cover the training split,
-  1991-01-01 to 2018-12-31 (verify for the chosen variables).
-- **Known limitations:** reanalysis at a grid point is not a gauge or catchment
-  average; respect API rate limits and cache responses.
-
-## 4. Open-Meteo Forecast API
-
-> Not fetched yet.
-
-- **Provider:** Open-Meteo.
-- **URL:** https://open-meteo.com/en/docs
-- **Provides:** recent past + forecast weather at gauge locations for live predictions.
-- **Type:** numerical weather model forecast.
-- **Licence / attribution:** same as above (CC BY 4.0, non-commercial, no key);
-  attribution required in the frontend.
-- **Time coverage:** recent days plus a short forecast window (verify limits).
-- **Known limitations:** training uses reanalysis while live uses forecasts,
-  so a small training/live input mismatch is expected. Variable names must be
-  checked to exist identically in both APIs.
-
-## Design note
-
-Training weather comes from the Open-Meteo archive rather than CAMELS-IND's own
-forcings (IMD/IMDAA), so training and live inputs come from the same source
-family. The model does not take past observed flow as input, so no live gauge
-feed is needed.
+- **IMD real-time gridded rainfall and temperature** (via `imdlib` 0.4.0,
+  pinned in `requirements.txt`): verified working without login on
+  2026-10-27; 1-2 day lag; rainfall on the same 0.25° grid as the archive,
+  temperature on 0.5° (archive 1°). Data-use terms not found.
+- **NCMRWF RDS (IMDAA):** all CAMELS IMDAA variables exist, but only as a
+  reanalysis archive ending 2020; login and CC-BY acceptance required.
+- **IITM / NCMRWF THREDDS (NCUM forecasts):** unreachable from here on 2026-10-27.
+- **GLEAM:** yearly releases only; no near-real-time product.
 
 ## Considered, not used
 
 | Source | Reason |
 |--------|--------|
-| NASA GPM IMERG | Needs Earthdata login and raster processing; no matching live forecast from the same source. |
-| Copernicus ERA5-Land (direct download) | CDS account plus NetCDF/GRIB handling; Open-Meteo already serves ERA5-family data as point JSON. |
+| Open-Meteo (Archive and Forecast APIs) | Dropped by project decision: inputs now come from the CAMELS-IND forcings (IMD/IMDAA) and Indian live sources. A Phase A plan (ERA5 cells, `scripts/plan_open_meteo_fetch.py`, `configs/data.yaml` `open_meteo` block) is kept for reference; no bulk data was fetched (one 31-day test request only). |
+| NASA GPM IMERG | Needs Earthdata login and raster processing; not the source of the CAMELS rainfall. |
+| Copernicus ERA5-Land (direct download) | CDS account plus NetCDF/GRIB handling; not the source of the CAMELS forcings. |
 | GloFAS | Simulated discharge from another model, not observations; unsuitable as a target. |
 | India-WRIS (direct download) | CAMELS-IND already packages India-WRIS streamflow in a curated, documented form. |
 | Global Flood Database | Satellite flood-extent events, not daily streamflow at gauges. |

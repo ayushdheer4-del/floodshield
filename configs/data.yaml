@@ -1,7 +1,7 @@
 # Data configuration.
 # CAMELS-IND and HydroRIVERS are downloaded and verified (scripts/download_data.py).
 # Gauge selection: scripts/select_gauges.py -> configs/selected_gauges.csv.
-# Open-Meteo weather: planned (scripts/plan_open_meteo_fetch.py); NOT fetched yet.
+# Model inputs: CAMELS-IND forcings (scripts/build_forcing_table.py). Open-Meteo: NOT USED.
 
 paths:
   data_dir: ./data
@@ -108,11 +108,13 @@ gauge_selection:
     coord_mismatch_km_max: 5             # cwc vs ghi station distance above this
     high_flow_quantile: 0.95             # test days above the train-period quantile; flag if none
 
-# Open-Meteo weather for training (Archive API) and, later, live (Forecast API).
-# ALL VALUES ARE PROPOSED (Phase A plan). Checked against
-# https://open-meteo.com/en/docs/historical-weather-api and https://open-meteo.com/en/docs.
+# NOT USED (project decision, 2026-10-27): model inputs are the CAMELS-IND
+# forcings; live sources are in docs/live_data_options.md. This Open-Meteo
+# Phase A plan is kept for reference only; no bulk data was fetched.
+# Checked against https://open-meteo.com/en/docs/historical-weather-api and
+# https://open-meteo.com/en/docs.
 open_meteo:
-  status: PROPOSED
+  status: NOT_USED
   archive_base_url: https://archive-api.open-meteo.com/v1/archive
   forecast_base_url: https://api.open-meteo.com/v1/forecast
   # Without `models`, the Archive API mixes ERA5 with ECMWF IFS 9 km from 2017
