@@ -163,3 +163,26 @@ def apply_thresholds(diag: pd.DataFrame, preset: Mapping) -> pd.DataFrame:
     out["passes"] = reasons.map(len) == 0
     out["fail_reasons"] = reasons.map("; ".join)
     return out
+
+
+def apply_manual_includes(passes: pd.Series, manual_include: Iterable[Mapping]) -> pd.DataFrame:
+    """Combine the threshold result with manually included gauges.
+
+    Returns ``selected`` (bool), ``selection`` ("thresholds", "manual_include"
+    or "") and ``manual_reason``. Every entry needs a known ``gauge_id`` and a
+    non-empty ``reason``.
+    """
+    out = pd.DataFrame(index=passes.index)
+    out["selected"] = passes.astype(bool)
+    out["selection"] = passes.map({True: "thresholds", False: ""})
+    out["manual_reason"] = ""
+    for entry in manual_include or []:
+        gid, reason = str(entry["gauge_id"]), str(entry.get("reason", "")).strip()
+        if gid not in out.index:
+            raise KeyError(f"manual_include gauge {gid!r} is not a candidate gauge")
+        if not reason:
+            raise ValueError(f"manual_include gauge {gid!r} needs a reason")
+        out.loc[gid, "manual_reason"] = reason
+        if not out.loc[gid, "selected"]:
+            out.loc[gid, ["selected", "selection"]] = [True, "manual_include"]
+    return out

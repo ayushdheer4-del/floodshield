@@ -21,6 +21,7 @@ import yaml
 from floodshield.data.camels_ind_loader import load_gauge_table, load_streamflow
 from floodshield.data.gauge_selection import (
     FLAG_COLUMNS,
+    apply_manual_includes,
     apply_thresholds,
     compute_diagnostics,
     compute_flags,
@@ -29,7 +30,7 @@ from floodshield.data.gauge_selection import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 SELECTED_COLUMNS = ["gauge_id", "basin", "river", "cwc_site_name", "ghi_lat", "ghi_lon",
-                    "catchment_area_km2", *FLAG_COLUMNS]
+                    "catchment_area_km2", "selection", *FLAG_COLUMNS]
 
 
 def load_yaml(path: Path) -> dict:
@@ -73,7 +74,11 @@ def main() -> int:
         result = apply_thresholds(diag, preset)
         report[f"passes_{name}"] = result["passes"]
         report[f"fail_reasons_{name}"] = result["fail_reasons"]
-    report["selected"] = report[f"passes_{args.preset}"]
+    report = report.join(apply_manual_includes(report[f"passes_{args.preset}"],
+                                               sel_cfg.get("manual_include")))
+    for gid, row in report[report["selection"] == "manual_include"].iterrows():
+        print(f"Manual include: {gid} {row['cwc_site_name']} ({row['basin']}), "
+              f"fails '{args.preset}': {row[f'fail_reasons_{args.preset}']}")
 
     print("\nGauges passing per preset:")
     for name, preset in sel_cfg["presets"].items():

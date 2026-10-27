@@ -6,6 +6,7 @@ import pytest
 
 from floodshield.data.camels_ind_loader import load_streamflow, pad_gauge_ids, read_attributes
 from floodshield.data.gauge_selection import (
+    apply_manual_includes,
     apply_thresholds,
     count_test_days_above_train_quantile,
     coverage_pct,
@@ -141,3 +142,21 @@ def test_thresholds_pass_fail_and_reasons():
     # 70.0 meets ">= 70"; only the monsoon validation check fails
     assert result.loc["08001", "fail_reasons"] == "monsoon coverage validation 10.0% < 60%"
     assert "coverage validation nan% < 60%" in result.loc["08002", "fail_reasons"]
+
+
+def test_manual_include_overrides_failed_gauge_only():
+    passes = pd.Series({"03001": True, "08029": False, "08030": False})
+    out = apply_manual_includes(passes, [{"gauge_id": "08029", "reason": "project decision"}])
+    assert out["selected"].to_dict() == {"03001": True, "08029": True, "08030": False}
+    assert out["selection"].to_dict() == {
+        "03001": "thresholds", "08029": "manual_include", "08030": ""}
+    assert out.loc["08029", "manual_reason"] == "project decision"
+
+
+@pytest.mark.parametrize("entry, error", [
+    ({"gauge_id": "99999", "reason": "x"}, KeyError),
+    ({"gauge_id": "08029", "reason": " "}, ValueError),
+])
+def test_manual_include_rejects_unknown_id_or_missing_reason(entry, error):
+    with pytest.raises(error):
+        apply_manual_includes(pd.Series({"08029": False}), [entry])

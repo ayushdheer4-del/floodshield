@@ -94,6 +94,11 @@ gauge_selection:
     strict:
       coverage_min:         {train: 85, validation: 75, test: 75}
       monsoon_coverage_min: {train: 85, validation: 75, test: 75}
+  # Manual decisions that override the threshold result. Each entry needs a
+  # reason; the report and selected_gauges.csv record "manual_include".
+  manual_include:
+    - gauge_id: "08029"   # Rajim (Mahanadi)
+      reason: "Kept by project decision; validation coverage 58.9% is just below the 60% minimum."
   # Flags mark gauges for review; they never drop a gauge automatically.
   flags:
     heavy_dam_reservoir_index_min: 1.0   # reservoir_index = total storage / mean annual flow
