@@ -108,6 +108,21 @@ gauge_selection:
     coord_mismatch_km_max: 5             # cwc vs ghi station distance above this
     high_flow_quantile: 0.95             # test days above the train-period quantile; flag if none
 
+# River graph between the selected gauges (scripts/build_graph.py).
+# ALL VALUES ARE PROPOSED, to be tuned after reviewing the snapping report.
+river_graph:
+  bbox_margin_deg: 0.5            # HydroRIVERS loaded only inside the catchments' bbox + margin
+  metric_crs: "EPSG:7755"         # WGS 84 / India NSF LCC (metres) for distances and areas
+  snap_max_distance_km: 5.0       # candidate reaches within this distance of (ghi_lat, ghi_lon)
+  area_ratio_tolerance: 0.5       # accept UPLAND_SKM / ghi_area within [1/1.5, 1.5]
+  high_conf_ratio_tolerance: 0.1  # "high" confidence: ratio within [1/1.1, 1.1] ...
+  high_conf_distance_km: 1.0      # ... and within this distance
+  nested_fraction_min: 0.9        # polygon A counts as inside B if >= 90% of A's area is in B
+  outputs:
+    dir: ./data/graph
+    tracked_edges: ./configs/graph_edges.csv
+    map: ./outputs/graph_map.png
+
 # NOT USED (project decision, 2026-10-27): model inputs are the CAMELS-IND
 # forcings; live sources are in docs/live_data_options.md. This Open-Meteo
 # Phase A plan is kept for reference only; no bulk data was fetched.
