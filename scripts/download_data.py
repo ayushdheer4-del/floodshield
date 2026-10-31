@@ -15,7 +15,7 @@ Files that are already present and verified are skipped. Partial downloads are
 resumed with HTTP Range requests. Archives are extracted once; a marker file
 (``.<archive>.extracted``) records a completed extraction.
 
-Open-Meteo weather is NOT fetched here (see scripts/fetch_open_meteo_archive.py).
+Weather inputs come from the CAMELS-IND forcings in the same zip (Open-Meteo is not used).
 
 Usage:
     python scripts/download_data.py [--data-dir ./data] [--skip-hydrorivers] [--no-extract]

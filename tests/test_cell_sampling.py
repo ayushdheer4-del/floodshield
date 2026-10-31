@@ -1,4 +1,4 @@
-"""Tests for Open-Meteo grid-cell sampling (tiny hand-built polygons)."""
+"""Tests for Open-Meteo grid-cell sampling (considered, not used; tiny hand-built polygons)."""
 
 import pytest
 from shapely.geometry import Point, Polygon, box

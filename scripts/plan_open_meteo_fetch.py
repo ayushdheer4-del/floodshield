@@ -1,5 +1,7 @@
 """Plan Open-Meteo cell sampling for the selected gauges (no downloads).
 
+Considered, NOT used: Open-Meteo was dropped; kept for reference only.
+
 Reads configs/selected_gauges.csv, the CAMELS-IND catchment polygons and the
 open_meteo block of configs/data.yaml, and writes:
 

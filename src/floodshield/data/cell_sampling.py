@@ -1,5 +1,7 @@
 """Choose weather grid cells for each catchment (Open-Meteo point sampling).
 
+Considered, NOT used: Open-Meteo was dropped; kept for reference with its tests.
+
 Cells are centres of a regular lat/lon grid aligned to the reanalysis grid
 (``origin + k * resolution``). Each catchment gets a number of points that
 depends on its area:

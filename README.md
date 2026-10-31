@@ -22,7 +22,11 @@ the project review.
 - **Region:** India only. Two basins: **Godavari** and **Mahanadi**.
 - **Time step:** daily.
 - **Target:** observed river streamflow (m3/s) at gauge nodes.
-- **Forecast horizon:** 1 to 3 days (**proposed**, not final).
+- **Forecast horizon:** 4 days (**proposed**, not final), from a 90-day past window.
+- **Live plan:** recent observed rain/temperature from IMD real-time grids (tested) plus
+  forecast rain from NASA GEOS-FP (not yet tested), averaged per catchment, into one
+  STG-Mamba; XGBoost (Phase 3) corrects its systematic errors. An alert means predicted
+  daily flow above the gauge's own high-flow threshold; a daily model cannot resolve the hour.
 - **Graph:** nodes = river gauges; edges = upstream to downstream links derived
   from the river network.
 - **Inputs:** weather + static catchment attributes + graph. The model is
