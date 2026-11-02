@@ -17,6 +17,7 @@ tensors (indexing, not copying).
 
 import logging
 from collections.abc import Mapping
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -26,6 +27,13 @@ from torch.utils.data import Dataset
 log = logging.getLogger(__name__)
 
 FUTURE_RAIN_MODES = ("observed", "noisy")
+TEST_SPLIT = "test"
+
+
+class TestSplitLockedError(RuntimeError):
+    """The test split was requested without the explicit --final-test flag."""
+
+    __test__ = False  # not a pytest class
 
 
 def sample_indices(dates: pd.DatetimeIndex, mask: np.ndarray, start: str, end: str,
@@ -96,3 +104,30 @@ class WindowDataset(Dataset):
             "mask": self.mask[fut],                    # [H, N]
             "t": self.dates[t].strftime("%Y-%m-%d"),
         }
+
+
+def load_split(processed_dir: Path, split: str, final_test: bool = False) -> dict:
+    """Load one split from arrays.npz, refusing the test split unless ``final_test``.
+
+    Arrays are truncated after the split's last target day, so train and
+    validation data never hold test-period values in memory. Returns the
+    WindowDataset plus q_m3s, dates (truncated), gauge_ids and t_index.
+    """
+    if split == TEST_SPLIT and not final_test:
+        raise TestSplitLockedError(
+            "The test split (2013-2018) is locked. It can only be loaded with the explicit "
+            "--final-test flag, once, after all choices are fixed on validation.")
+    if split == TEST_SPLIT:
+        banner = "!" * 72
+        print(f"{banner}\nWARNING: LOADING THE TEST SPLIT (--final-test). Do NOT tune anything on "
+              f"these results.\n{banner}", flush=True)
+    with np.load(Path(processed_dir) / "arrays.npz", allow_pickle=False) as a:
+        t_index = a[f"t_index_{split}"]
+        window_days, horizon_days = int(a["window_days"]), int(a["horizon_days"])
+        end = int(t_index.max()) + horizon_days + 1
+        dates = pd.DatetimeIndex(a["dates"][:end])
+        ds = WindowDataset(a["x"][:end], a["rain"][:end], a["y"][:end], a["mask"][:end], a["static"],
+                           dates, t_index, window_days, horizon_days)
+        return {"dataset": ds, "q_m3s": a["q_m3s"][:end], "dates": dates,
+                "gauge_ids": a["gauge_ids"].tolist(), "t_index": t_index,
+                "window_days": window_days, "horizon_days": horizon_days}

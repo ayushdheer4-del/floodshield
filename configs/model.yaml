@@ -66,16 +66,24 @@ input:
 
 graph:
   nodes: gauges                  # the 46 gauges in configs/selected_gauges.csv
-  edges: upstream_to_downstream  # configs/graph_edges.csv (scripts/build_graph.py)
-  directed: true
-  self_loops: null               # TODO
-  normalization: null            # TODO
+  edges_file: ./configs/graph_edges.csv   # upstream -> downstream, river_km (scripts/build_graph.py)
+  enabled: true                  # false = no cross-gauge information (ablation)
+  direction: downstream          # downstream | both
+  layers: 2                      # one layer reaches one edge further
+  distance_scale_km: 100.0       # edge attribute = river_km / this
 
 model:
-  hidden_dim: null     # TODO
-  state_dim: null      # TODO (Mamba SSM state size)
-  num_layers: null     # TODO
-  dropout: null        # TODO
+  # Sizes are PROPOSED. Static features are projected and ADDED to every step's
+  # projected input (see src/floodshield/models/stg_mamba.py).
+  d_model: 32          # per-step hidden size
+  d_state: 8           # Mamba SSM state size per channel
+  expand: 2            # inner channels = expand * d_model
+  d_conv: 4            # causal depthwise conv kernel
+  dt_min: 0.001        # initial SSM step size range (log-uniform), as in the original
+  dt_max: 0.1          # Mamba code; sets how long memory lasts before training
+  num_layers: 2        # Mamba blocks; weights shared across gauges
+  dropout: 0.1
+  head_hidden: 64
 
 output:
   target: streamflow   # m3/s; trained as log1p, standardised per gauge

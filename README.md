@@ -5,9 +5,10 @@ This repository holds **Phase 2**: a spatio-temporal graph + Mamba (STG-Mamba)
 streamflow forecasting model, plus a live prediction backend and frontend for
 the project review.
 
-> **Status: early data preparation.** Implemented so far: dataset download
-> (`scripts/download_data.py`) and gauge selection (`scripts/select_gauges.py`).
-> No model, graph code, weather fetching, backend endpoint or frontend exists yet.
+> **Status:** data preparation, river graph and STG-Mamba training are implemented;
+> the model has been scored on the validation split only (`metrics/stg_mamba_val_metrics.json`).
+> The test split (2013-2018) is locked behind `--final-test` and has not been used. XGBoost
+> correction, live data fetching, backend and frontend are not implemented.
 
 ## Methodology (three phases)
 
@@ -74,6 +75,10 @@ cp .env.example .env
 python scripts/download_data.py   # CAMELS-IND + HydroRIVERS into data/raw/ (verified, re-runnable)
 python scripts/select_gauges.py   # writes configs/selected_gauges.csv and outputs/gauge_selection_report.csv
 python scripts/build_forcing_table.py   # all CAMELS forcings for the selected gauges -> data/processed/
+python scripts/build_graph.py           # river graph -> data/graph/, configs/graph_edges.csv
+python scripts/build_training_data.py   # windows, normalisers, thresholds -> data/processed/training/
+python scripts/train.py                 # train on 1991-2008, early stopping on validation
+python scripts/evaluate.py              # validation metrics, baselines, outputs/val_predictions.parquet
 ```
 
 ## Run tests
@@ -83,9 +88,9 @@ source .venv/bin/activate
 pytest
 ```
 
-`tests/test_environment.py` checks imports, MPS availability and a tiny float32
-tensor op; `tests/test_data_pipeline.py` tests the loader and gauge-selection
-logic. The remaining test files are skipped placeholders.
+Tests cover the environment (imports, MPS), data loading and gauge selection, river graph,
+leakage safety, the Mamba block, graph layer, masked loss and the test-split guard.
+`tests/test_inference.py` is still a skipped placeholder.
 
 ## Layout
 

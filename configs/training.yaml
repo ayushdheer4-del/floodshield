@@ -68,18 +68,43 @@ warning:
   # horizon_days, i.e. 2..4 with the current settings.
 
 loss:
-  # Masked loss: days with missing observed streamflow are excluded.
-  type: masked   # TODO: choose base loss (e.g. MSE / NSE-based) and document
+  # Masked loss on standardised log1p flow: missing days contribute nothing.
+  type: huber            # huber | mse
+  huber_delta: 1.0
   mask_missing_targets: true
+  high_flow:
+    enabled: false       # any choice about this is made on VALIDATION only
+    weight: null         # TODO if enabled: loss weight on days above threshold_quantile
 
 optimizer:
-  name: null           # TODO
-  learning_rate: null  # TODO
+  name: adamw
+  learning_rate: 0.001
+  weight_decay: 0.0001
 
-batch_size: null  # TODO
-epochs: null      # TODO
+batch_size: 32
+eval_batch_size: 64
+epochs: 60               # maximum
+gradient_clip_norm: 1.0
 early_stopping:
-  patience: null  # TODO
+  patience: 8            # epochs without validation-loss improvement
+
+# S2 sanity check: must nearly reach zero on one small batch (dropout off).
+sanity_overfit:
+  batch_size: 8
+  steps: 600
+  learning_rate: 0.003
+  pass_loss: 0.02
+
+# S3 benchmark.
+benchmark:
+  batches: 20
+  warmup_batches: 3
+  cpu_batches: 3
+
+# Reference baselines (never model inputs).
+baselines:
+  climatology_window_days: 15   # centred calendar window over the training years
 
 checkpoint_dir: ./checkpoints
+metrics_dir: ./metrics           # small tracked JSON summaries
 processed_dir: ./data/processed/training   # arrays, normalisers, sample indices

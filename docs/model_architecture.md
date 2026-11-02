@@ -1,7 +1,8 @@
-# STG-Mamba model architecture (intended concept)
+# STG-Mamba model architecture
 
-> **Not implemented.** This describes the planned design only. Window sizes
-> and the feature list are PROPOSED settings in `configs/model.yaml`.
+> **Implemented and trained; scored on validation only** (`src/floodshield/models/`,
+> `metrics/stg_mamba_val_metrics.json`). All sizes are PROPOSED settings in
+> `configs/model.yaml`. XGBoost correction (item 6) is not implemented.
 
 ## Concept
 
@@ -26,15 +27,23 @@
 Training uses a masked loss so days with missing observed streamflow are
 ignored; missing targets are never filled.
 
-## Compute notes (planned, not implemented)
+## Implementation notes
+
+- Static features are projected and **added** to every step's projected input.
+- Each gauge's sequence has 94 steps (90 past + 4 future). On future steps the rain channel
+  holds `x_future`, other weather channels are 0 (standardised mean), `is_future` = 1.
+- The hidden state at the last step is the gauge embedding; one head maps it to all 4 leads.
+- SSM step size delta uses the original Mamba initialisation (log-uniform in
+  [`dt_min`, `dt_max`]); a simpler init forgot the input within a few steps.
+
+## Compute notes
 
 - **Primary device is MPS** (Apple GPU), float32 only; CPU is a logged fallback.
-- The Mamba selective scan must **not** run as one tiny GPU op per time step,
-  especially with a 90-day window. Plan to use a parallel (associative) scan
-  or a chunked scan.
+- The selective scan is currently **sequential** over the 94 steps, which is acceptable at
+  about 150 s per epoch (`metrics/step2_benchmark.json`). A parallel or chunked scan is
+  an optional later optimisation.
 - Process all gauge nodes of both basins as one batch dimension so the GPU
   receives large tensors.
 - Keep data resident on the GPU to avoid host/device transfers.
 - Do not rely on `torch.compile` on MPS.
-- Once the model exists, benchmark MPS vs CPU on a tiny forward/backward pass
-  and report the result.
+- Benchmark: `python scripts/train.py --benchmark` compares MPS and CPU.

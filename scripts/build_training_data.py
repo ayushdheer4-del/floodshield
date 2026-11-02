@@ -6,7 +6,7 @@ All statistics (normalisers, thresholds, climate descriptors) use the TRAIN
 period only. Writes:
 
 - data/processed/training/arrays.npz: x [T,N,F], rain [T,N], y [T,N], mask [T,N],
-  static [N,S], dates, t_index_<split>
+  q_m3s [T,N], static [N,S], dates, t_index_<split>
 - data/processed/training/normalisers.json (incl. target inverse transform)
 - data/processed/training/static_features.csv (raw and standardised)
 - configs/flow_thresholds.csv (tracked)
@@ -131,6 +131,7 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     np.savez(out / "arrays.npz", x=x.astype(np.float32), rain=rain.astype(np.float32),
              y=np.nan_to_num(y, nan=0.0).astype(np.float32), mask=mask, static=static.astype(np.float32),
+             q_m3s=q_arr, window_days=np.int64(L), horizon_days=np.int64(H),
              dates=np.asarray(dates.strftime("%Y-%m-%d"), dtype="U10"), gauge_ids=np.array(ids, dtype="U5"),
              **{f"t_index_{s}": v for s, v in t_index.items()})
     (out / "normalisers.json").write_text(json.dumps({
