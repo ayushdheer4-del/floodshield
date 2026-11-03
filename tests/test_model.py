@@ -20,6 +20,7 @@ from floodshield.models.layers import build_edge_tensors
 from floodshield.models.mamba_block import MambaBlock, SelectiveSSM, selective_scan
 from floodshield.models.stg_mamba import STGMamba, STGMambaConfig, build_sequence, config_from_yaml
 from floodshield.training.losses import high_flow_weights, masked_loss
+from floodshield.training.trainer import LossConfig, batch_loss
 
 IDS = ["A", "B", "C", "D", "E"]
 # A -> B -> C, D -> C, E isolated.
@@ -211,6 +212,19 @@ def test_masked_loss_is_mean_over_observed_entries_and_all_masked_is_zero():
 def test_high_flow_weights_only_above_threshold():
     y = torch.tensor([[0.5, 2.5]])
     assert high_flow_weights(y, torch.tensor([1.0, 2.0]), 5.0).tolist() == [[1.0, 5.0]]
+
+
+def test_batch_loss_applies_high_flow_weight_and_needs_a_threshold():
+    class Zero(torch.nn.Module):
+        def forward(self, x_past, x_future, static):
+            return torch.zeros(1, 1, 2)
+    batch = {"x_past": None, "x_future": None, "static": None, "y": torch.tensor([[[1.0, 0.5]]]),
+             "mask": torch.ones(1, 1, 2)}
+    cfg = LossConfig("mse", 1.0, True, 3.0)
+    # Gauge 0 is above its threshold (weight 3), gauge 1 below: (3*1 + 1*0.25) / 4.
+    assert batch_loss(Zero(), batch, cfg, torch.tensor([0.0, 2.0])).item() == pytest.approx(3.25 / 4)
+    with pytest.raises(ValueError):
+        batch_loss(Zero(), batch, cfg, None)
 
 
 # --- 5. MPS vs CPU ----------------------------------------------------------------

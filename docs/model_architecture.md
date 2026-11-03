@@ -39,6 +39,11 @@ ignored; missing targets are never filled.
 - One-seed validation comparison of the two decoders: `metrics/stg_mamba_val_metrics.json` and
   `metrics/stg_mamba_perlead_val_metrics.json`. `per_lead` removes the decay across leads but
   under-predicts high flows more, so `last_step` stays the default for now.
+- `scripts/train.py --high-flow-weight W` weights days above the gauge's warning threshold in the
+  training and validation loss, so validation losses are not comparable across weights. One-seed
+  validation results at `per_lead` W = 5 and 10: `metrics/stg_mamba_perlead_hf5_val_metrics.json`
+  and `metrics/stg_mamba_perlead_hf10_val_metrics.json`. Both are candidates, not defaults, until
+  they are repeated on more seeds.
 - SSM step size delta uses the original Mamba initialisation (log-uniform in
   [`dt_min`, `dt_max`]); a simpler init forgot the input within a few steps.
 

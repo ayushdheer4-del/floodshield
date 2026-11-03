@@ -9,6 +9,9 @@ Modes:
 Options:
     --graph {on,off}  override configs/model.yaml graph.enabled (ablation)
     --decoder {last_step,per_lead}  override configs/model.yaml model.decoder
+    --high-flow-weight W  loss weight on days above the gauge's warning threshold,
+                      overriding configs/training.yaml loss.high_flow. Validation
+                      loss is weighted too, so it is not comparable across weights.
     --run-name NAME   checkpoint and log name (default stg_mamba)
 """
 
@@ -23,6 +26,7 @@ import pandas as pd
 import torch
 import yaml
 
+from floodshield.data.preprocessing import Normaliser
 from floodshield.data.sequence_dataset import announce_future_rain_mode, load_split
 from floodshield.models.stg_mamba import DECODERS, STGMamba, config_from_yaml
 from floodshield.training.losses import masked_loss
@@ -53,6 +57,17 @@ def build_model(model_cfg: dict, node_ids: list[str], n_static: int, **overrides
     edges = pd.read_csv(rp(model_cfg["graph"]["edges_file"]), dtype={"source": str, "target": str})
     cfg = config_from_yaml(model_cfg, model_cfg["input"]["feature_list"], n_static, len(node_ids), **overrides)
     return STGMamba(cfg, edges, node_ids)
+
+
+def high_flow_z_thresholds(train_cfg: dict, processed: Path, gauge_ids: list[str], device) -> torch.Tensor:
+    """The warning threshold of each gauge, in the standardised log1p space of the targets."""
+    norm = json.loads((processed / "normalisers.json").read_text())["target"]
+    if norm["gauge_ids"] != gauge_ids:
+        raise ValueError("normaliser gauge order differs from the data")
+    thr = pd.read_csv(REPO_ROOT / "configs" / "flow_thresholds.csv", dtype={"gauge_id": str}).set_index("gauge_id")
+    column = f"q{round(train_cfg['warning']['threshold_quantile'] * 100):d}"
+    z = Normaliser.from_dict(norm).transform(thr.loc[gauge_ids, column].to_numpy())
+    return torch.tensor(z, dtype=torch.float32, device=device)
 
 
 def mps_memory_mb() -> dict:
@@ -150,6 +165,7 @@ def main() -> int:
     parser.add_argument("--benchmark", action="store_true")
     parser.add_argument("--graph", choices=["on", "off"], default=None)
     parser.add_argument("--decoder", choices=list(DECODERS), default=None)
+    parser.add_argument("--high-flow-weight", type=float, default=None)
     parser.add_argument("--run-name", default="stg_mamba")
     args = parser.parse_args()
 
@@ -159,10 +175,13 @@ def main() -> int:
     if args.decoder is not None:
         model_cfg["model"]["decoder"] = args.decoder
     decoder = model_cfg["model"]["decoder"]
+    if args.high_flow_weight is not None:
+        train_cfg["loss"]["high_flow"] = {"enabled": True, "weight": args.high_flow_weight}
+    high_flow = train_cfg["loss"]["high_flow"]
     set_seed(train_cfg["seed"])
     announce_future_rain_mode(train_cfg["future_rain"]["mode"], train_cfg["future_rain"].get("noisy"))
     device = get_device(train_cfg["device"], train_cfg["fallback_device"])
-    print(f"Device: {device} | graph enabled: {model_cfg['graph']['enabled']} | decoder: {decoder}", flush=True)
+    print(f"Device: {device} | graph enabled: {model_cfg['graph']['enabled']} | decoder: {decoder} | high_flow: {high_flow}", flush=True)
 
     processed = rp(train_cfg["processed_dir"])
     train, val = load_split(processed, "train"), load_split(processed, "validation")
@@ -196,13 +215,16 @@ def main() -> int:
         print(f"epoch {row['epoch']:3d}  train {row['train_loss']:.5f}  val {row['val_loss']:.5f}  "
               f"{row['epoch_seconds']:.1f}s{'  *best*' if row['best'] else ''}", flush=True)
 
+    z_threshold = high_flow_z_thresholds(train_cfg, processed, train["gauge_ids"], device) \
+        if high_flow["enabled"] else None
     result = fit(model, make_loader(ds, train_cfg["batch_size"], shuffle=True, seed=train_cfg["seed"]),
                  make_loader(val["dataset"], train_cfg["eval_batch_size"], shuffle=False),
                  optimizer, device, LossConfig.from_yaml(train_cfg["loss"]), train_cfg["epochs"],
                  train_cfg["early_stopping"]["patience"], train_cfg["gradient_clip_norm"], ckpt, extra,
-                 on_epoch=on_epoch)
+                 z_threshold=z_threshold, on_epoch=on_epoch)
     summary = {**{k: v for k, v in result.items() if k != "history"}, "parameters": model.num_parameters(),
                "device": str(device), "graph_enabled": model_cfg["graph"]["enabled"], "decoder": decoder,
+               "high_flow": high_flow,
                "future_rain_mode": train_cfg["future_rain"]["mode"], "seed": train_cfg["seed"],
                "seconds_per_epoch_median": float(np.median([r["epoch_seconds"] for r in result["history"]])),
                "history": result["history"]}
