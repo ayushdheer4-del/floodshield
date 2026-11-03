@@ -6,8 +6,14 @@ streamflow is never an argument, so it cannot reach the predictions.
 Sequence per gauge (L past + H future steps), channels = dynamic features plus
 is_future. On future steps the rain channel holds x_future, the other weather
 channels are 0 (their standardised mean) and is_future = 1. Static features are
-projected to d_model and ADDED to every step's projected input. The hidden state
-at the last step is the gauge embedding.
+projected to d_model and ADDED to every step's projected input.
+
+Decoders (STGMambaConfig.decoder):
+    last_step  the hidden state at the last step is the gauge embedding; one head
+               maps it to all H leads, so every lead sees rain up to t+H.
+    per_lead   the hidden state at future step t+k decodes lead k through a shared
+               head, so lead k sees rain only up to t+k. Graph layers run
+               separately on each lead's states.
 """
 
 from collections.abc import Sequence
@@ -19,6 +25,8 @@ from torch import nn
 
 from floodshield.models.layers import RiverGraphLayer, build_edge_tensors
 from floodshield.models.mamba_block import MambaEncoder
+
+DECODERS = ("last_step", "per_lead")
 
 
 @dataclass(frozen=True)
@@ -41,6 +49,7 @@ class STGMambaConfig:
     distance_scale_km: float
     dt_min: float = 0.001
     dt_max: float = 0.1
+    decoder: str = "last_step"
 
 
 def config_from_yaml(model_cfg: dict, feature_list: Sequence[str], n_static: int, n_nodes: int,
@@ -54,6 +63,7 @@ def config_from_yaml(model_cfg: dict, feature_list: Sequence[str], n_static: int
         "num_layers": m["num_layers"], "dropout": m["dropout"], "head_hidden": m["head_hidden"],
         "graph_enabled": g["enabled"], "graph_layers": g["layers"], "graph_direction": g["direction"],
         "distance_scale_km": g["distance_scale_km"], "dt_min": m["dt_min"], "dt_max": m["dt_max"],
+        "decoder": m.get("decoder", "last_step"),   # checkpoints older than this option are last_step
     }
     values.update(overrides)
     return STGMambaConfig(**values)
@@ -73,6 +83,8 @@ def build_sequence(x_past: torch.Tensor, x_future: torch.Tensor, rain_channel: i
 class STGMamba(nn.Module):
     def __init__(self, cfg: STGMambaConfig, edges: pd.DataFrame, node_ids: Sequence[str]):
         super().__init__()
+        if cfg.decoder not in DECODERS:
+            raise ValueError(f"decoder must be one of {DECODERS}, got {cfg.decoder!r}")
         self.cfg = cfg
         d = cfg.d_model
         self.input_proj = nn.Linear(cfg.n_features + 1, d)   # weather channels + is_future
@@ -87,7 +99,7 @@ class STGMamba(nn.Module):
                 RiverGraphLayer(d, cfg.n_nodes, edge_index, edge_attr, cfg.dropout)
                 for _ in range(cfg.graph_layers))
         self.head = nn.Sequential(nn.Linear(d, cfg.head_hidden), nn.SiLU(), nn.Dropout(cfg.dropout),
-                                  nn.Linear(cfg.head_hidden, cfg.horizon))
+                                  nn.Linear(cfg.head_hidden, 1 if cfg.decoder == "per_lead" else cfg.horizon))
 
     def forward(self, x_past: torch.Tensor, x_future: torch.Tensor, static: torch.Tensor) -> torch.Tensor:
         """x_past [B, L, N, F], x_future [B, H, N, 1], static [B, N, S] -> [B, H, N]
@@ -96,7 +108,15 @@ class STGMamba(nn.Module):
         seq = build_sequence(x_past, x_future, self.cfg.rain_channel)            # [B, T, N, F+1]
         z = self.input_proj(seq) + self.static_proj(static)[:, None]             # [B, T, N, d]
         z = z.permute(0, 2, 1, 3).reshape(b * n, seq.shape[1], -1)               # [B*N, T, d]
-        h = self.encoder(z)[:, -1].reshape(b, n, -1)                             # [B, N, d]
+        hidden = self.encoder(z)                                                 # [B*N, T, d]
+        if self.cfg.decoder == "per_lead":
+            H = self.cfg.horizon
+            h = hidden[:, -H:].reshape(b, n, H, -1).permute(0, 2, 1, 3)          # [B, H, N, d]
+            h = h.reshape(b * H, n, -1)                                          # [B*H, N, d]
+            for layer in self.graph_layers:
+                h = layer(h)
+            return self.head(h).reshape(b, H, n)                                 # [B, H, N]
+        h = hidden[:, -1].reshape(b, n, -1)                                      # [B, N, d]
         for layer in self.graph_layers:
             h = layer(h)
         return self.head(h).permute(0, 2, 1)                                     # [B, H, N]

@@ -18,7 +18,7 @@ from floodshield.evaluation.evaluator import (
 from floodshield.evaluation.metrics import flood_contingency, kge, nse
 from floodshield.models.layers import build_edge_tensors
 from floodshield.models.mamba_block import MambaBlock, SelectiveSSM, selective_scan
-from floodshield.models.stg_mamba import STGMamba, STGMambaConfig, build_sequence
+from floodshield.models.stg_mamba import STGMamba, STGMambaConfig, build_sequence, config_from_yaml
 from floodshield.training.losses import high_flow_weights, masked_loss
 
 IDS = ["A", "B", "C", "D", "E"]
@@ -128,6 +128,61 @@ def test_edge_attributes_use_river_distance():
         build_edge_tensors(EDGES, IDS, "sideways", 100.0)
 
 
+# --- 3b. per-lead decoder ---------------------------------------------------------
+
+def test_per_lead_output_shape_and_graph_adjacency():
+    m = make_model(decoder="per_lead", graph_layers=1)
+    assert m(*make_batch(b=3)).shape == (3, H, len(IDS))
+    assert affected(m, "A") == {"A", "B"}
+    assert affected(m, "C") == {"C"}
+    assert affected(m, "E") == {"E"}
+
+
+def test_per_lead_rain_reaches_only_this_gauge_from_that_lead_on():
+    # Also pins the reshapes: a mix-up of lead and gauge axes would move these effects.
+    m = make_model(decoder="per_lead", graph_enabled=False)
+    x_past, x_future, static = make_batch()
+    base = m(x_past, x_future, static)
+    x2 = x_future.clone()
+    x2[:, 1, IDS.index("B")] += 5.0        # rain on future day 2 (index 1) at gauge B
+    changed = (m(x_past, x2, static) - base).abs().amax(dim=0) > 0   # [H, N]
+    expected = torch.zeros(H, len(IDS), dtype=torch.bool)
+    expected[1:, IDS.index("B")] = True
+    assert torch.equal(changed, expected)
+
+
+def test_per_lead_graph_stays_within_the_lead():
+    m = make_model(decoder="per_lead", graph_layers=1)
+    x_past, x_future, static = make_batch()
+    base = m(x_past, x_future, static)
+    x2 = x_future.clone()
+    x2[:, 1, IDS.index("A")] += 5.0
+    changed = (m(x_past, x2, static) - base).abs().amax(dim=0) > 0
+    assert not changed[0].any()            # lead 1 cannot see day-2 rain at any gauge
+    assert changed[1, IDS.index("B")]      # lead 2 at the downstream gauge can
+
+
+def test_last_step_lead_one_sees_later_rain():
+    m = make_model(graph_enabled=False)
+    x_past, x_future, static = make_batch()
+    x2 = x_future.clone()
+    x2[:, 3] += 5.0                        # rain on future day 4
+    assert not torch.equal(m(x_past, x_future, static)[:, 0], m(x_past, x2, static)[:, 0])
+
+
+def test_unknown_decoder_rejected():
+    with pytest.raises(ValueError):
+        make_model(decoder="sideways")
+
+
+def test_config_without_decoder_defaults_to_last_step():
+    yaml_cfg = {"model": {"d_model": 8, "d_state": 4, "expand": 2, "d_conv": 3, "num_layers": 1, "dropout": 0.0,
+                          "head_hidden": 16, "dt_min": 0.001, "dt_max": 0.1},
+                "graph": {"enabled": False, "layers": 1, "direction": "downstream", "distance_scale_km": 100.0},
+                "input": {"future_features": ["prcp"]}, "output": {"horizon_days": H}}
+    assert config_from_yaml(yaml_cfg, ["prcp"], S, len(IDS)).decoder == "last_step"
+
+
 # --- 4. masked loss ---------------------------------------------------------------
 
 @pytest.mark.parametrize("kind", ["huber", "mse"])
@@ -164,8 +219,9 @@ MPS_CPU_TOLERANCE = 1e-4
 
 
 @pytest.mark.skipif(not torch.backends.mps.is_available(), reason="MPS not available")
-def test_mps_and_cpu_forward_agree():
-    model = make_model(graph_layers=2)
+@pytest.mark.parametrize("decoder", ["last_step", "per_lead"])
+def test_mps_and_cpu_forward_agree(decoder):
+    model = make_model(graph_layers=2, decoder=decoder)
     batch = make_batch()
     cpu = model(*batch)
     mps = model.to("mps")(*[t.to("mps") for t in batch]).cpu()

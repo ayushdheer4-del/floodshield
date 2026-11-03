@@ -84,6 +84,7 @@ model:
   num_layers: 2        # Mamba blocks; weights shared across gauges
   dropout: 0.1
   head_hidden: 64
+  decoder: last_step   # last_step | per_lead (see src/floodshield/models/stg_mamba.py)
 
 output:
   target: streamflow   # m3/s; trained as log1p, standardised per gauge

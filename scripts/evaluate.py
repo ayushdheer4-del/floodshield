@@ -58,6 +58,8 @@ def main() -> int:
                                   data["t_index"])
     H = data["horizon_days"]
     short = SHORT[args.split]
+    # The default run keeps the plain names; other runs must not overwrite them.
+    prefix = short if args.run_name == "stg_mamba" else f"{args.run_name}_{short}"
 
     device = get_device(train_cfg["device"], train_cfg["fallback_device"])
     ckpt = torch.load(rp(train_cfg["checkpoint_dir"]) / f"{args.run_name}_best.pt", map_location="cpu",
@@ -135,15 +137,15 @@ def main() -> int:
         "predicted_z": pred_z.ravel(),
     })
     frame["gauge_id"] = frame["gauge_id"].astype(str)
-    pred_path = out_dir / f"{short}_predictions.parquet"
+    pred_path = out_dir / f"{prefix}_predictions.parquet"
     frame.to_parquet(pred_path, index=False)
-    scores.to_csv(out_dir / f"{short}_scores.csv", index=False)
-    flood.to_csv(out_dir / f"{short}_flood.csv", index=False)
+    scores.to_csv(out_dir / f"{prefix}_scores.csv", index=False)
+    flood.to_csv(out_dir / f"{prefix}_flood.csv", index=False)
     pd.concat({k: v.set_index(["gauge_id", "lead_day"]) for k, v in score_tables.items()}, axis=1).to_csv(
-        out_dir / f"{short}_baseline_comparison.csv")
+        out_dir / f"{prefix}_baseline_comparison.csv")
 
     summary = {
-        "split": args.split, "run_name": args.run_name, "best_epoch": ckpt["epoch"],
+        "split": args.split, "run_name": args.run_name, "decoder": cfg.decoder, "best_epoch": ckpt["epoch"],
         "best_val_loss": ckpt["val_loss"], "samples": n, "gauges": N,
         "negative_predictions_clipped": negative,
         "future_rain_mode": train_cfg["future_rain"]["mode"],

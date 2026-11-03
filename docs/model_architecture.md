@@ -32,7 +32,13 @@ ignored; missing targets are never filled.
 - Static features are projected and **added** to every step's projected input.
 - Each gauge's sequence has 94 steps (90 past + 4 future). On future steps the rain channel
   holds `x_future`, other weather channels are 0 (standardised mean), `is_future` = 1.
-- The hidden state at the last step is the gauge embedding; one head maps it to all 4 leads.
+- `model.decoder` selects how leads are produced. `last_step` (default): the hidden state at the
+  last step is the gauge embedding and one head maps it to all 4 leads, so every lead sees rain up
+  to t+4. `per_lead`: the hidden state at step t+k decodes lead k through a shared head, so lead k
+  sees rain only up to t+k; graph layers run separately per lead.
+- One-seed validation comparison of the two decoders: `metrics/stg_mamba_val_metrics.json` and
+  `metrics/stg_mamba_perlead_val_metrics.json`. `per_lead` removes the decay across leads but
+  under-predicts high flows more, so `last_step` stays the default for now.
 - SSM step size delta uses the original Mamba initialisation (log-uniform in
   [`dt_min`, `dt_max`]); a simpler init forgot the input within a few steps.
 

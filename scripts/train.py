@@ -8,6 +8,7 @@ Modes:
     python scripts/train.py                   # S4: full training
 Options:
     --graph {on,off}  override configs/model.yaml graph.enabled (ablation)
+    --decoder {last_step,per_lead}  override configs/model.yaml model.decoder
     --run-name NAME   checkpoint and log name (default stg_mamba)
 """
 
@@ -23,7 +24,7 @@ import torch
 import yaml
 
 from floodshield.data.sequence_dataset import announce_future_rain_mode, load_split
-from floodshield.models.stg_mamba import STGMamba, config_from_yaml
+from floodshield.models.stg_mamba import DECODERS, STGMamba, config_from_yaml
 from floodshield.training.losses import masked_loss
 from floodshield.training.trainer import (
     LossConfig,
@@ -61,7 +62,7 @@ def mps_memory_mb() -> dict:
             "driver_allocated_mb": torch.mps.driver_allocated_memory() / 1e6}
 
 
-def overfit_batch(model_cfg: dict, train_cfg: dict, train, device, metrics_dir: Path) -> int:
+def overfit_batch(model_cfg: dict, train_cfg: dict, train, device, metrics_dir: Path, out_name: str) -> int:
     s = train_cfg["sanity_overfit"]
     ds = train["dataset"]
     picks = np.linspace(0, len(ds) - 1, s["batch_size"]).astype(int).tolist()
@@ -85,7 +86,7 @@ def overfit_batch(model_cfg: dict, train_cfg: dict, train, device, metrics_dir: 
     passed = curve[-1]["loss"] <= s["pass_loss"]
     print(f"Overfit sanity: first {curve[0]['loss']:.4f}, last {curve[-1]['loss']:.5f}, "
           f"pass_loss {s['pass_loss']} -> {'PASS' if passed else 'FAIL'}")
-    (metrics_dir / "step2_overfit.json").write_text(json.dumps(
+    (metrics_dir / out_name).write_text(json.dumps(
         {"batch_size": s["batch_size"], "sample_dates": [ds[i]["t"] for i in picks],
          "curve": curve, "passed": passed, "device": str(device)}, indent=1))
     return 0 if passed else 1
@@ -148,16 +149,20 @@ def main() -> int:
     parser.add_argument("--overfit-batch", action="store_true")
     parser.add_argument("--benchmark", action="store_true")
     parser.add_argument("--graph", choices=["on", "off"], default=None)
+    parser.add_argument("--decoder", choices=list(DECODERS), default=None)
     parser.add_argument("--run-name", default="stg_mamba")
     args = parser.parse_args()
 
     model_cfg, train_cfg = load_cfg("model.yaml"), load_cfg("training.yaml")
     if args.graph is not None:
         model_cfg["graph"]["enabled"] = args.graph == "on"
+    if args.decoder is not None:
+        model_cfg["model"]["decoder"] = args.decoder
+    decoder = model_cfg["model"]["decoder"]
     set_seed(train_cfg["seed"])
     announce_future_rain_mode(train_cfg["future_rain"]["mode"], train_cfg["future_rain"].get("noisy"))
     device = get_device(train_cfg["device"], train_cfg["fallback_device"])
-    print(f"Device: {device} | graph enabled: {model_cfg['graph']['enabled']}", flush=True)
+    print(f"Device: {device} | graph enabled: {model_cfg['graph']['enabled']} | decoder: {decoder}", flush=True)
 
     processed = rp(train_cfg["processed_dir"])
     train, val = load_split(processed, "train"), load_split(processed, "validation")
@@ -165,7 +170,8 @@ def main() -> int:
     metrics_dir.mkdir(parents=True, exist_ok=True)
 
     if args.overfit_batch:
-        return overfit_batch(model_cfg, train_cfg, train, device, metrics_dir)
+        out_name = "step2_overfit.json" if args.run_name == "stg_mamba" else f"{args.run_name}_overfit.json"
+        return overfit_batch(model_cfg, train_cfg, train, device, metrics_dir, out_name)
     if args.benchmark:
         return benchmark(model_cfg, train_cfg, train, val, device, metrics_dir)
 
@@ -196,7 +202,7 @@ def main() -> int:
                  train_cfg["early_stopping"]["patience"], train_cfg["gradient_clip_norm"], ckpt, extra,
                  on_epoch=on_epoch)
     summary = {**{k: v for k, v in result.items() if k != "history"}, "parameters": model.num_parameters(),
-               "device": str(device), "graph_enabled": model_cfg["graph"]["enabled"],
+               "device": str(device), "graph_enabled": model_cfg["graph"]["enabled"], "decoder": decoder,
                "future_rain_mode": train_cfg["future_rain"]["mode"], "seed": train_cfg["seed"],
                "seconds_per_epoch_median": float(np.median([r["epoch_seconds"] for r in result["history"]])),
                "history": result["history"]}
