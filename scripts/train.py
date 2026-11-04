@@ -12,6 +12,7 @@ Options:
     --high-flow-weight W  loss weight on days above the gauge's warning threshold,
                       overriding configs/training.yaml loss.high_flow. Validation
                       loss is weighted too, so it is not comparable across weights.
+    --seed N          override configs/training.yaml seed
     --run-name NAME   checkpoint and log name (default stg_mamba)
 """
 
@@ -166,6 +167,7 @@ def main() -> int:
     parser.add_argument("--graph", choices=["on", "off"], default=None)
     parser.add_argument("--decoder", choices=list(DECODERS), default=None)
     parser.add_argument("--high-flow-weight", type=float, default=None)
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--run-name", default="stg_mamba")
     args = parser.parse_args()
 
@@ -178,10 +180,12 @@ def main() -> int:
     if args.high_flow_weight is not None:
         train_cfg["loss"]["high_flow"] = {"enabled": True, "weight": args.high_flow_weight}
     high_flow = train_cfg["loss"]["high_flow"]
+    if args.seed is not None:
+        train_cfg["seed"] = args.seed
     set_seed(train_cfg["seed"])
     announce_future_rain_mode(train_cfg["future_rain"]["mode"], train_cfg["future_rain"].get("noisy"))
     device = get_device(train_cfg["device"], train_cfg["fallback_device"])
-    print(f"Device: {device} | graph enabled: {model_cfg['graph']['enabled']} | decoder: {decoder} | high_flow: {high_flow}", flush=True)
+    print(f"Device: {device} | graph enabled: {model_cfg['graph']['enabled']} | decoder: {decoder} | high_flow: {high_flow} | seed: {train_cfg['seed']}", flush=True)
 
     processed = rp(train_cfg["processed_dir"])
     train, val = load_split(processed, "train"), load_split(processed, "validation")

@@ -42,8 +42,12 @@ ignored; missing targets are never filled.
 - `scripts/train.py --high-flow-weight W` weights days above the gauge's warning threshold in the
   training and validation loss, so validation losses are not comparable across weights. One-seed
   validation results at `per_lead` W = 5 and 10: `metrics/stg_mamba_perlead_hf5_val_metrics.json`
-  and `metrics/stg_mamba_perlead_hf10_val_metrics.json`. Both are candidates, not defaults, until
-  they are repeated on more seeds.
+  and `metrics/stg_mamba_perlead_hf10_val_metrics.json`.
+- Three-seed validation comparison (seeds 42, 1, 2; per lead and seed, median across gauges, flood
+  scores pooled): `metrics/seed_comparison_val.csv`. `peak` is predicted over observed flow on each
+  gauge's 10 largest observed days; `errtop` and `errrest` are the mean log1p error on days above
+  and below each gauge's validation q90. Seed-to-seed spread exceeds the decoder difference, so
+  config defaults are unchanged.
 - SSM step size delta uses the original Mamba initialisation (log-uniform in
   [`dt_min`, `dt_max`]); a simpler init forgot the input within a few steps.
 
