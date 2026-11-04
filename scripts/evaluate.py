@@ -6,6 +6,9 @@ Default split: validation. The test split is locked: it needs the explicit
 Usage:
     python scripts/evaluate.py [--run-name stg_mamba]
     python scripts/evaluate.py --split test --final-test     # final evaluation only
+    python scripts/evaluate.py --run-name NAME --members RUN1 RUN2 RUN3
+        # ensemble: mean of the members' predictions in standardised log1p space,
+        # scored and saved under NAME
 """
 
 import argparse
@@ -49,6 +52,7 @@ def main() -> int:
     parser.add_argument("--split", choices=["validation", "test"], default="validation")
     parser.add_argument("--final-test", action="store_true")
     parser.add_argument("--run-name", default="stg_mamba")
+    parser.add_argument("--members", nargs="+", default=None, help="checkpoints to average, by run name")
     args = parser.parse_args()
 
     train_cfg = yaml.safe_load((REPO_ROOT / "configs" / "training.yaml").read_text())
@@ -62,16 +66,21 @@ def main() -> int:
     prefix = short if args.run_name == "stg_mamba" else f"{args.run_name}_{short}"
 
     device = get_device(train_cfg["device"], train_cfg["fallback_device"])
-    ckpt = torch.load(rp(train_cfg["checkpoint_dir"]) / f"{args.run_name}_best.pt", map_location="cpu",
-                      weights_only=False)
-    model_cfg = ckpt["model_cfg"]
-    if ckpt["gauge_ids"] != ids:
-        print("ERROR: checkpoint gauge order differs from the data", file=sys.stderr)
-        return 1
-    edges = pd.read_csv(rp(model_cfg["graph"]["edges_file"]), dtype={"source": str, "target": str})
-    cfg = config_from_yaml(model_cfg, model_cfg["input"]["feature_list"], ckpt["n_static"], len(ids))
-    model = STGMamba(cfg, edges, ids).to(device)
-    model.load_state_dict(ckpt["model_state"])
+    members = args.members or [args.run_name]
+    member_preds, ckpts = [], []
+    for member in members:
+        ckpt = torch.load(rp(train_cfg["checkpoint_dir"]) / f"{member}_best.pt", map_location="cpu",
+                          weights_only=False)
+        model_cfg = ckpt["model_cfg"]
+        if ckpt["gauge_ids"] != ids:
+            print(f"ERROR: checkpoint {member} gauge order differs from the data", file=sys.stderr)
+            return 1
+        edges = pd.read_csv(rp(model_cfg["graph"]["edges_file"]), dtype={"source": str, "target": str})
+        cfg = config_from_yaml(model_cfg, model_cfg["input"]["feature_list"], ckpt["n_static"], len(ids))
+        model = STGMamba(cfg, edges, ids).to(device)
+        model.load_state_dict(ckpt["model_state"])
+        member_preds.append(predict(model, make_loader(ds, train_cfg["eval_batch_size"], shuffle=False), device))
+        ckpts.append(ckpt)
 
     norm = json.loads((processed / "normalisers.json").read_text())
     if norm["target"]["gauge_ids"] != ids:
@@ -79,7 +88,7 @@ def main() -> int:
         return 1
     tnorm = Normaliser.from_dict(norm["target"])
 
-    pred_z = predict(model, make_loader(ds, train_cfg["eval_batch_size"], shuffle=False), device)
+    pred_z = np.mean(member_preds, axis=0)
     pred_raw = np.stack([tnorm.inverse(pred_z[:, k]) for k in range(H)], axis=1)
     negative = int((pred_raw < 0).sum())
     pred = np.clip(pred_raw, 0.0, None)   # expm1 of a slightly negative log flow
@@ -145,8 +154,10 @@ def main() -> int:
         out_dir / f"{prefix}_baseline_comparison.csv")
 
     summary = {
-        "split": args.split, "run_name": args.run_name, "decoder": cfg.decoder, "best_epoch": ckpt["epoch"],
-        "best_val_loss": ckpt["val_loss"], "samples": n, "gauges": N,
+        "split": args.split, "run_name": args.run_name, "members": members, "decoder": cfg.decoder,
+        "best_epoch": [c["epoch"] for c in ckpts] if args.members else ckpts[0]["epoch"],
+        "best_val_loss": [c["val_loss"] for c in ckpts] if args.members else ckpts[0]["val_loss"],
+        "samples": n, "gauges": N,
         "negative_predictions_clipped": negative,
         "future_rain_mode": train_cfg["future_rain"]["mode"],
         "note": "future_rain mode observed uses real IMD rain for t+1..t+H, so these scores are optimistic "

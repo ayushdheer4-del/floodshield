@@ -48,6 +48,10 @@ ignored; missing targets are never filled.
   gauge's 10 largest observed days; `errtop` and `errrest` are the mean log1p error on days above
   and below each gauge's validation q90. Seed-to-seed spread exceeds the decoder difference, so
   config defaults are unchanged.
+- `scripts/evaluate.py --run-name NAME --members RUN1 RUN2 RUN3` scores the mean of several
+  checkpoints' predictions in standardised log1p space. Three-seed validation ensembles:
+  `metrics/ens_perlead_hf5_val_metrics.json`, `ens_perlead_hf10_val_metrics.json` and
+  `ens_laststep_hf5_val_metrics.json`.
 - SSM step size delta uses the original Mamba initialisation (log-uniform in
   [`dt_min`, `dt_max`]); a simpler init forgot the input within a few steps.
 
